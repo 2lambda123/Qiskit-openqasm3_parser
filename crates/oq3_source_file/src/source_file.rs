@@ -14,10 +14,10 @@ use oq3_syntax::ast::HasModuleItem;
 use crate::api::{inner_print_compiler_errors, parse_source_file, print_compiler_errors};
 
 pub(crate) fn parse_source_and_includes<P: AsRef<Path>>(
-    source: &str,
+    source_text: &str,
     search_path_list: Option<&[P]>,
 ) -> (ParsedSource, Vec<SourceFile>) {
-    let syntax_ast: ParsedSource = synast::SourceFile::parse(source);
+    let syntax_ast: ParsedSource = synast::SourceFile::parse(source_text);
     let included = parse_included_files(&syntax_ast, search_path_list);
     (syntax_ast, included)
 }
@@ -148,7 +148,7 @@ pub(crate) fn expand_path<T: AsRef<Path>, P: AsRef<Path>>(
 /// Read QASM3 source file, respecting env variable `QASM3_PATH` if set.
 pub(crate) fn read_source_file(file_path: &Path) -> String {
     match fs::read_to_string(file_path) {
-        Ok(source) => source,
+        Ok(source_text) => source_text,
         Err(err) => panic!(
             "Unable to read OpenQASM source file '{}': {}",
             file_path.display(),
@@ -184,7 +184,7 @@ pub(crate) fn parse_included_files<P: AsRef<Path>>(
 #[derive(Clone, Debug)]
 pub struct SourceString {
     pub(crate) fake_file_path: PathBuf, // Option<String>, // Typical name is "no file".
-    pub(crate) source: String,
+    pub(crate) source_text: String,
     pub(crate) syntax_ast: ParsedSource,
     pub(crate) included: Vec<SourceFile>,
 }
@@ -214,7 +214,7 @@ impl SourceTrait for SourceString {
         inner_print_compiler_errors(
             self.syntax_ast().errors(),
             self.fake_file_path(),
-            self.source(),
+            self.source_text(),
         );
         // Print from included source files (recursively).
         for source_file in self.included().iter() {
@@ -231,7 +231,7 @@ impl SourceString {
         included: Vec<SourceFile>,
     ) -> SourceString {
         SourceString {
-            source: source.as_ref().to_owned(),
+            source_text: source.as_ref().to_owned(),
             fake_file_path: fake_file_path.as_ref().to_owned(),
             syntax_ast,
             included,
@@ -242,7 +242,7 @@ impl SourceString {
         &self.fake_file_path
     }
 
-    pub fn source(&self) -> &str {
-        &self.source
+    pub fn source_text(&self) -> &str {
+        &self.source_text
     }
 }

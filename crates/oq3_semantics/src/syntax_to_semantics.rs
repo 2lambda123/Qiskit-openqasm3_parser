@@ -81,7 +81,7 @@ impl ParseResult<SourceString> {
         synres.print_syntax_errors();
         self.context
             .errors()
-            .print_errors_no_file(synres.fake_file_path(), synres.source());
+            .print_errors_no_file(synres.fake_file_path(), synres.source_text());
     }
 }
 

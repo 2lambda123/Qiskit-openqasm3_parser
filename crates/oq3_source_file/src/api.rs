@@ -5,7 +5,7 @@
 // But they are also used in this crate, so we put them here.
 
 use ariadne::Config;
-use ariadne::{ColorGenerator, Label, Report, ReportKind, Source};
+use ariadne::{ColorGenerator, Label, Report, ReportKind};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -29,10 +29,12 @@ where
     SourceFile::new(full_path, syntax_ast, included)
 }
 
-/// Read source from `file_path` and parse to the syntactic AST.
+/// Parse `source_text` to the syntactic AST.
 /// Parse and store included files recursively.
+/// The string `fake_file_path` is used only in printed in error messages.
+/// In particular, no attempt is made to interpret it as a file path.
 pub fn parse_source_string<T, P>(
-    source: T,
+    source_text: T,
     fake_file_path: Option<&str>,
     search_path_list: Option<&[P]>,
 ) -> SourceString
@@ -40,37 +42,40 @@ where
     T: AsRef<str>,
     P: AsRef<Path>,
 {
-    let source = source.as_ref();
-    let (syntax_ast, included) = parse_source_and_includes(source, search_path_list);
+    let source_text = source_text.as_ref();
+    let (syntax_ast, included) = parse_source_and_includes(source_text, search_path_list);
     let fake_file_path = PathBuf::from(fake_file_path.unwrap_or("no file"));
-    SourceString::new(source, fake_file_path, syntax_ast, included)
+    SourceString::new(source_text, fake_file_path, syntax_ast, included)
 }
 
-/// Print compiler errors. Diagnostics include text take from `source`.
+/// Print compiler errors. Diagnostics include text taken from `source_text`.
 /// The file `info_file_path` is only used for printing error messages. In particular,
 /// it does not need to correspond to an existing file. In case `info_file_path` is indeed
-/// the source file, then `source` is read before calling this function.
+/// the source file, then it has been read into `source_text` before calling this function.
 pub fn inner_print_compiler_errors<T: ErrorTrait>(
     errors: &[T],
     info_file_path: &Path,
-    source: &str,
+    source_text: &str,
 ) {
     let file_path_str = info_file_path.as_os_str().to_str().unwrap();
     for err in errors.iter() {
         let err_string = err.message();
         let err_span = range_to_span(&err.range());
-        report_error(&err_string, &err_span, file_path_str, source);
+        report_error(&err_string, &err_span, file_path_str, source_text);
         println!();
     }
 }
 
 pub fn print_compiler_errors<T: ErrorTrait>(errors: &[T], file_path: &Path) {
     // ariadne seems to want path only as &str, not PathBuf.
-    let source = &read_source_file(file_path);
-    inner_print_compiler_errors(errors, file_path, source);
+    let source_text = &read_source_file(file_path);
+    inner_print_compiler_errors(errors, file_path, source_text);
 }
 
-pub fn report_error(message: &str, span: &Range<usize>, file_path: &str, source: &str) {
+/// Print the error message `message`. The entire source text is in `source_text`.
+/// The location of the error in the source text given by `span` is used to select
+/// text from `source_text` to contextualize the error.
+pub fn report_error(message: &str, span: &Range<usize>, file_path: &str, source_text: &str) {
     let mut colors = ColorGenerator::new();
     // Generate & choose some colours for each of our elements
     let a = colors.next();
@@ -87,6 +92,6 @@ pub fn report_error(message: &str, span: &Range<usize>, file_path: &str, source:
                 .with_color(a),
         )
         .finish()
-        .print((file_path, Source::from(source)))
+        .print((file_path, ariadne::Source::from(source_text)))
         .unwrap();
 }
