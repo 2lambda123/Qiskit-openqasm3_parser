@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use crate::source_file::{
     expand_path, parse_source_and_includes, range_to_span, read_source_file, ErrorTrait,
-    SourceFile, SourceString,
+    SourceFile, SourceString, SourceFileError,
 };
 
 /// Read source from `file_path` and parse to the syntactic AST.
@@ -24,9 +24,32 @@ where
     P: AsRef<Path>,
 {
     let full_path = expand_path(file_path, search_path_list);
+    let source_text = read_source_file(&full_path);
+    let source_text2 = match source_text {
+        Ok(source_text3) => source_text3,
+        _ => panic!(),
+    };
     let (syntax_ast, included) =
-        parse_source_and_includes(read_source_file(&full_path).as_str(), search_path_list);
+        parse_source_and_includes(source_text2.as_str(), search_path_list);
     SourceFile::new(full_path, syntax_ast, included)
+}
+
+
+// separate _inner func only needed while developing. consolidate with above
+pub fn parse_source_file_inner<T, P>(file_path: T, search_path_list: Option<&[P]>) -> Result<SourceFile, SourceFileError>
+where
+    T: AsRef<Path>,
+    P: AsRef<Path>,
+{
+    let full_path = expand_path(file_path, search_path_list);
+    match read_source_file(&full_path) {
+        Ok(source_text) => {
+            let (syntax_ast, included) =
+                parse_source_and_includes(source_text.as_str(), search_path_list);
+            Ok(SourceFile::new(full_path, syntax_ast, included))
+        },
+        Err(error) => Err(error)
+    }
 }
 
 /// Parse `source_text` to the syntactic AST.
@@ -68,8 +91,12 @@ pub fn inner_print_compiler_errors<T: ErrorTrait>(
 
 pub fn print_compiler_errors<T: ErrorTrait>(errors: &[T], file_path: &Path) {
     // ariadne seems to want path only as &str, not PathBuf.
-    let source_text = &read_source_file(file_path);
-    inner_print_compiler_errors(errors, file_path, source_text);
+    let source_text = read_source_file(file_path);
+    let source_text2 = match source_text {
+        Ok(source_text3) => source_text3,
+        _ => panic!(),
+    };
+    inner_print_compiler_errors(errors, file_path, &source_text2);
 }
 
 /// Print the error message `message`. The entire source text is in `source_text`.

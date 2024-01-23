@@ -115,6 +115,12 @@ impl<T> Parse<T> {
     pub fn errors(&self) -> &[SyntaxError] {
         &self.errors
     }
+    pub fn append_error(&mut self, err: SyntaxError) {
+        let mutref = triomphe::Arc::<Vec<SyntaxError>>::get_mut(&mut self.errors);
+        if mutref.is_some() {
+            mutref.unwrap().push(err);
+        }
+    }
 }
 
 impl<T: AstNode> Parse<T> {

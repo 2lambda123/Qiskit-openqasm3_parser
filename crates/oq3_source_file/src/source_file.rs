@@ -4,6 +4,7 @@
 use oq3_syntax::ast as synast; // Syntactic AST
 use oq3_syntax::Parse;
 use oq3_syntax::TextRange;
+use oq3_syntax::AstNode;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,15 +12,20 @@ use std::path::{Path, PathBuf};
 // traits
 use oq3_syntax::ast::HasModuleItem;
 
-use crate::api::{inner_print_compiler_errors, parse_source_file, print_compiler_errors};
+use crate::api::{inner_print_compiler_errors, parse_source_file, print_compiler_errors, parse_source_file_inner};
 
 pub(crate) fn parse_source_and_includes<P: AsRef<Path>>(
     source_text: &str,
     search_path_list: Option<&[P]>,
 ) -> (ParsedSource, Vec<SourceFile>) {
-    let syntax_ast: ParsedSource = synast::SourceFile::parse(source_text);
-    let included = parse_included_files(&syntax_ast, search_path_list);
+    let mut syntax_ast: ParsedSource = synast::SourceFile::parse(source_text);
+    let included = parse_included_files(&mut syntax_ast, search_path_list);
     (syntax_ast, included)
+}
+
+#[derive(Clone, Debug)]
+pub enum SourceFileError {
+    ReadSourceFileError(String),
 }
 
 // I think SourceFile actually just works with the source as a string.
@@ -28,7 +34,6 @@ pub(crate) type ParsedSource = Parse<synast::SourceFile>;
 
 pub trait ErrorTrait {
     fn message(&self) -> String;
-
     fn range(&self) -> TextRange;
 }
 
@@ -146,34 +151,54 @@ pub(crate) fn expand_path<T: AsRef<Path>, P: AsRef<Path>>(
 }
 
 /// Read QASM3 source file, respecting env variable `QASM3_PATH` if set.
-pub(crate) fn read_source_file(file_path: &Path) -> String {
+pub(crate) fn read_source_file(file_path: &Path) -> Result<String, SourceFileError> {
     match fs::read_to_string(file_path) {
-        Ok(source_text) => source_text,
-        Err(err) => panic!(
-            "Unable to read OpenQASM source file '{}': {}",
-            file_path.display(),
-            err
-        ),
+        Ok(source_text) => Ok(source_text),
+        Err(err) => {
+            Err(SourceFileError::ReadSourceFileError(
+                format!("Unable to read OpenQASM source file '{}': {}",
+                        file_path.display(),
+                        err)))
+        }
     }
 }
 
 // FIXME: prevent a file from including itself. Then there are two-file cycles, etc.
 ///  Recursively parse any files `include`d in the program `syntax_ast`.
 pub(crate) fn parse_included_files<P: AsRef<Path>>(
-    syntax_ast: &ParsedSource,
+    syntax_ast: &mut ParsedSource,
     search_path_list: Option<&[P]>,
 ) -> Vec<SourceFile> {
     syntax_ast
         .tree()
         .statements()
-        .filter_map(|parse_item| match parse_item {
-            synast::Stmt::Item(synast::Item::Include(include)) => {
-                let file: synast::FilePath = include.file().unwrap();
-                let file_path = file.to_string().unwrap();
-                Some(parse_source_file(file_path, search_path_list))
+        .filter_map(|parse_item| {
+            match parse_item {
+                synast::Stmt::Item(synast::Item::Include(include)) => {
+                    let file: synast::FilePath = include.file().unwrap();
+                    let file_path = file.to_string().unwrap();
+                    match parse_source_file_inner(file_path, search_path_list) {
+                        Ok(source_file) => Some(source_file),
+                        Err(SourceFileError::ReadSourceFileError(msg)) => {
+//                            dbg!(msg);
+                            let newerr = oq3_syntax::SyntaxError::new(msg, include.syntax().text_range());
+                            syntax_ast.append_error(newerr);
+                            None
+                        },
+
+                    }
+                }
+                _ => None,
             }
-            _ => None,
         })
+        // .filter_map(|parse_item| match parse_item {
+        //     synast::Stmt::Item(synast::Item::Include(include)) => {
+        //         let file: synast::FilePath = include.file().unwrap();
+        //         let file_path = file.to_string().unwrap();
+        //         Some(parse_source_file(file_path, search_path_list))
+        //     }
+        //     _ => None,
+        // })
         .collect::<Vec<_>>()
 }
 
